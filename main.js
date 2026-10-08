@@ -5,10 +5,10 @@ const path = require('path');
 // 全ペインで共有するセッション（ログイン状態を保持）
 const PARTITION = 'persist:workspace';
 
-// Googleは「安全でないブラウザ」と判定するとログインを拒否するため、
-// User-Agent から Electron の表記を取り除いて通常のChromeとして振る舞う
-const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
-app.userAgentFallback = CHROME_UA;
+// Googleは埋め込みブラウザ（Electron）からのログインを拒否するため、
+// 全体を Firefox として振る舞わせる（Chrome を名乗るとブラウザの特徴と食い違い検出される）
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0';
+app.userAgentFallback = BROWSER_UA;
 
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 
@@ -72,7 +72,7 @@ function createWindow() {
     contents.setWindowOpenHandler(({ url }) => {
       // Googleのログイン・アカウント選択ポップアップはそのまま許可
       if (/^https:\/\/accounts\.google\.com\//.test(url)) {
-        return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { partition: PARTITION } } };
+        return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, webPreferences: { partition: PARTITION } } };
       }
       // それ以外のリンクは作業スペースで開く
       if (/^https?:\/\//.test(url)) {
@@ -120,7 +120,16 @@ ipcMain.handle('open-external', (_e, url) => {
 });
 
 app.whenReady().then(() => {
-  session.fromPartition(PARTITION).setUserAgent(CHROME_UA);
+  const ses = session.fromPartition(PARTITION);
+  ses.setUserAgent(BROWSER_UA);
+  // Firefox は Sec-CH-UA 系ヘッダーを送らないので、Chrome 由来の値を取り除く
+  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = { ...details.requestHeaders, 'User-Agent': BROWSER_UA };
+    for (const key of Object.keys(headers)) {
+      if (/^sec-ch-ua/i.test(key)) delete headers[key];
+    }
+    callback({ requestHeaders: headers });
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

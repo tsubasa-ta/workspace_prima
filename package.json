@@ -1,0 +1,17 @@
+{
+  "name": "prima-workspace",
+  "version": "1.0.0",
+  "description": "LINE・Gmail・Googleカレンダーを常時表示する4ペインのワークスペース",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./src/output.css --minify",
+    "watch:css": "tailwindcss -i ./src/input.css -o ./src/output.css --watch",
+    "start": "npm run build:css && electron ."
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "electron": "^44.7.0",
+    "tailwindcss": "^4.3.3"
+  }
+}

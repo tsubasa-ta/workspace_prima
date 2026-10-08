@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Prima ワークスペース</title>
+  <link rel="stylesheet" href="./output.css" />
+</head>
+<body>
+  <div id="app" class="flex h-full gap-1 p-2">
+
+    <!-- 左カラム：LINE / Gmail / カレンダー -->
+    <aside id="left" class="flex min-w-[280px] shrink-0 flex-col gap-1" style="width: 420px">
+
+      <!-- LINE -->
+      <section class="pane" data-pane="line">
+        <header class="pane-header">
+          <span class="h-2.5 w-2.5 rounded-full bg-[#06C755]"></span>
+          <span class="font-semibold">LINE</span>
+          <span class="badge" data-badge></span>
+          <div class="ml-auto flex items-center">
+            <button class="icon-btn" data-action="reload" title="再読み込み">⟳</button>
+            <button class="icon-btn" id="line-settings" title="LINE拡張の設定">⚙</button>
+          </div>
+        </header>
+        <div id="line-body" class="flex min-h-0 flex-1 flex-col"></div>
+      </section>
+
+      <div class="gutter-y" data-gutter="0"></div>
+
+      <!-- Gmail -->
+      <section class="pane" data-pane="gmail">
+        <header class="pane-header">
+          <span class="h-2.5 w-2.5 rounded-full bg-[#EA4335]"></span>
+          <span class="font-semibold">Gmail</span>
+          <span class="badge" data-badge></span>
+          <div class="ml-auto flex items-center">
+            <button class="icon-btn" data-action="back" title="戻る">←</button>
+            <button class="icon-btn" data-action="home" title="受信トレイ">⌂</button>
+            <button class="icon-btn" data-action="reload" title="再読み込み">⟳</button>
+            <button class="icon-btn" data-action="to-work" title="作業スペースで大きく開く">⤢</button>
+          </div>
+        </header>
+        <webview src="https://mail.google.com/mail/u/0/#inbox" partition="persist:workspace" allowpopups></webview>
+      </section>
+
+      <div class="gutter-y" data-gutter="1"></div>
+
+      <!-- Googleカレンダー -->
+      <section class="pane" data-pane="calendar">
+        <header class="pane-header">
+          <span class="h-2.5 w-2.5 rounded-full bg-[#4285F4]"></span>
+          <span class="font-semibold">Googleカレンダー</span>
+          <div class="ml-auto flex items-center">
+            <button class="icon-btn" data-action="back" title="戻る">←</button>
+            <button class="icon-btn" data-action="home" title="今日">⌂</button>
+            <button class="icon-btn" data-action="reload" title="再読み込み">⟳</button>
+            <button class="icon-btn" data-action="to-work" title="作業スペースで大きく開く">⤢</button>
+          </div>
+        </header>
+        <webview src="https://calendar.google.com/calendar/u/0/r/day" partition="persist:workspace" allowpopups></webview>
+      </section>
+    </aside>
+
+    <div class="gutter-x" id="gutter-x"></div>
+
+    <!-- 右：作業スペース -->
+    <main class="pane min-w-0 flex-1" data-pane="work">
+      <header class="pane-header h-11 gap-1">
+        <button class="icon-btn" data-action="back" title="戻る">←</button>
+        <button class="icon-btn" data-action="forward" title="進む">→</button>
+        <button class="icon-btn" data-action="reload" title="再読み込み">⟳</button>
+        <button class="icon-btn" data-action="home" title="ホーム">⌂</button>
+        <form id="address-form" class="mx-1 flex-1">
+          <input id="address" type="text" spellcheck="false"
+            class="h-8 w-full rounded-md border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 outline-none select-text placeholder:text-slate-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
+            placeholder="URL または 検索ワードを入力して Enter" />
+        </form>
+        <button class="icon-btn" id="set-home" title="現在のページをホームに設定">★</button>
+        <button class="icon-btn" id="open-external" title="通常のブラウザで開く">↗</button>
+      </header>
+      <div class="relative flex min-h-0 flex-1 flex-col">
+        <div id="work-progress" class="absolute inset-x-0 top-0 z-10 hidden h-0.5 animate-pulse bg-sky-500"></div>
+        <webview id="work" partition="persist:workspace" allowpopups></webview>
+      </div>
+    </main>
+  </div>
+
+  <!-- ドラッグ中に webview がマウス操作を奪わないようにするための覆い -->
+  <div id="drag-shield" class="fixed inset-0 z-50 hidden"></div>
+
+  <template id="line-fallback">
+    <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-slate-300">
+      <div class="text-4xl">💬</div>
+      <p class="font-semibold text-slate-100">LINE（Chrome拡張版）を読み込めませんでした</p>
+      <p class="text-xs leading-relaxed text-slate-400">
+        Chromeに「LINE」拡張機能をインストールし、<br />
+        そのフォルダを選択してください。<br />
+        <span class="break-all text-slate-500">例（Windows）: %LOCALAPPDATA%\Google\Chrome\User Data\Default\Extensions\ophjlpahpchlmihnnnihgmmeilfjmjjc\&lt;バージョン&gt;</span>
+      </p>
+      <div class="flex gap-2">
+        <button data-line="choose" class="rounded-md bg-[#06C755] px-3 py-1.5 font-semibold text-white hover:brightness-110">フォルダを選択</button>
+        <button data-line="desktop" class="rounded-md border border-slate-600 px-3 py-1.5 hover:bg-slate-700">LINEアプリを起動</button>
+      </div>
+    </div>
+  </template>
+
+  <script src="./renderer.js"></script>
+</body>
+</html>

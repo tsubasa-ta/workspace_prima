@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@source "./index.html";
+@source "./renderer.js";
+
+@layer base {
+  html,
+  body {
+    @apply h-full overflow-hidden bg-slate-900 text-slate-100 select-none;
+    font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .pane {
+    @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-800 shadow-lg;
+  }
+  .pane-header {
+    @apply flex h-9 shrink-0 items-center gap-2 border-b border-slate-700 px-2 text-sm;
+  }
+  .icon-btn {
+    @apply grid h-7 w-7 place-items-center rounded-md text-slate-400 transition hover:bg-slate-700 hover:text-white;
+  }
+  .badge {
+    @apply hidden min-w-5 rounded-full bg-red-500 px-1.5 text-center text-xs leading-5 font-bold text-white;
+  }
+  .gutter-x {
+    @apply w-1.5 shrink-0 cursor-col-resize rounded-full transition hover:bg-sky-500/60;
+  }
+  .gutter-y {
+    @apply h-1.5 shrink-0 cursor-row-resize rounded-full transition hover:bg-sky-500/60;
+  }
+  webview {
+    @apply min-h-0 flex-1 bg-white;
+  }
+}

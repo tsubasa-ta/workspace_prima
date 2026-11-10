@@ -199,10 +199,14 @@ function setup() {
   }
 
   salt_(); // PIN 用のソルトを用意
-  SpreadsheetApp.getUi().alert(
-    '初期設定が完了しました。\n「スタッフ」シートに社員・スタッフを登録してください。\n' +
-    'PIN は数字で入力すれば、初回ログイン時に自動で暗号化されます。'
-  );
+  const done = '初期設定が完了しました。\n「スタッフ」シートに社員・スタッフを登録してください。\n' +
+    'PIN は数字で入力すれば、初回ログイン時に自動で暗号化されます。';
+  try {
+    SpreadsheetApp.getUi().alert(done);
+  } catch (e) {
+    // Apps Script の画面から「実行」した場合はダイアログを出せないのでログに出す
+    console.log(done);
+  }
 }
 
 function menuMonthlySummary() {

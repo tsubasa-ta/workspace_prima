@@ -4,8 +4,9 @@
  * スプレッドシートに紐づけて使います。設置方法は attendance/README.md を参照。
  *
  * シート構成
- *   スタッフ : ID / 名前 / 区分 / PIN / 管理者 / 有効
+ *   スタッフ : ID / 名前 / 区分 / PIN / 管理者 / 有効 / 承認者 / 有給付与日数 / 付与日 / メール
  *   打刻ログ : 日時 / 日付 / スタッフID / 名前 / 種別 / メモ / 休憩(分)
+ *   申請     : 有給休暇・休日出勤の申請（Requests.gs）
  *   集計_YYYY-MM : メニュー「勤怠 > 月次集計を作成」で作られる集計表
  */
 
@@ -98,7 +99,7 @@ function getStatus(token) {
   const state = stateOf_(todayLogs);
 
   const result = {
-    me: { id: me.id, name: me.name, category: me.category, admin: me.admin },
+    me: { id: me.id, name: me.name, category: me.category, admin: me.admin, approver: me.approver },
     today: today,
     state: state,
     stateLabel: STATE_LABEL[state],
@@ -135,7 +136,7 @@ function getStatus(token) {
         };
       });
   }
-  return result;
+  return addRequestInfo_(result, me);
 }
 
 /** 打刻 */
@@ -203,8 +204,8 @@ function setup() {
   let staff = ss.getSheetByName(SHEET_STAFF);
   if (!staff) {
     staff = ss.insertSheet(SHEET_STAFF);
-    staff.appendRow(['ID', '名前', '区分', 'PIN', '管理者', '有効']);
-    staff.appendRow(['001', '校舎長（例）', '社員', '1234', true, true]);
+    staff.appendRow(STAFF_HEADERS);
+    staff.appendRow(['001', '校舎長（例）', '社員', '1234', true, true, false, '', '', '']);
     staff.setFrozenRows(1);
     staff.getRange('A:A').setNumberFormat('@');
     staff.getRange('D:D').setNumberFormat('@');
@@ -212,6 +213,7 @@ function setup() {
     staff.getRange('D2').setValue('1234');
     staff.getRange('E2:F2').insertCheckboxes();
     staff.getRange('E2:F2').setValue(true);
+    staff.getRange('G2').insertCheckboxes();
   }
 
   let log = ss.getSheetByName(SHEET_LOG);
@@ -223,6 +225,7 @@ function setup() {
     log.getRange('B:C').setNumberFormat('@');
   }
 
+  ensureRequestSchema_(); // 申請シートとスタッフシートの追加列
   salt_(); // PIN 用のソルトを用意
   const done = '初期設定が完了しました。\n「スタッフ」シートに社員・スタッフを登録してください。\n' +
     'PIN は数字で入力すれば、初回ログイン時に自動で暗号化されます。';
@@ -255,11 +258,15 @@ function buildMonthlySummary(month) {
   const logs = readLogs_().filter(function (l) { return l.date.indexOf(month) === 0; });
 
   const detail = [['日付', 'ID', '名前', '区分', '出勤', '退勤', '休憩', '実働', '実働(時間)', '備考']];
-  const total = [['ID', '名前', '区分', '出勤日数', '実働合計', '実働合計(時間)', '退勤漏れ']];
+  const total = [['ID', '名前', '区分', '出勤日数', '実働合計', '実働合計(時間)', '退勤漏れ', '有給取得(日)', '休日出勤(日)']];
+  const approved = readRequests_().filter(function (r) {
+    return r.status === REQ_STATUS.APPROVED && r.date.indexOf(month) === 0;
+  });
 
   staffList.forEach(function (s) {
     const days = summarizeByDay_(logs.filter(function (l) { return l.key === s.key; }));
-    if (!days.length && !s.active) return;
+    const reqs = approved.filter(function (r) { return r.key === s.key; });
+    if (!days.length && !reqs.length && !s.active) return;
     let workMin = 0;
     let missing = 0;
     days.forEach(function (d) {
@@ -269,7 +276,10 @@ function buildMonthlySummary(month) {
       workMin += d.workMin;
       if (d.open) missing++;
     });
-    total.push([s.id, s.name, s.category, days.length, hm_(workMin), round2_(workMin / 60), missing]);
+    const paid = reqs.filter(function (r) { return isPaid_(r.type); })
+      .reduce(function (a, r) { return a + r.days; }, 0);
+    const holiday = reqs.filter(function (r) { return r.type === REQ_TYPE.HOLIDAY_WORK; }).length;
+    total.push([s.id, s.name, s.category, days.length, hm_(workMin), round2_(workMin / 60), missing, paid, holiday]);
   });
 
   const name = '集計_' + month;
@@ -392,6 +402,10 @@ function readStaff_() {
       pin: String(r[3]).trim(),
       admin: r[4] === true || String(r[4]).toUpperCase() === 'TRUE',
       active: r[5] === '' || r[5] === true || String(r[5]).toUpperCase() === 'TRUE',
+      approver: r[6] === true || String(r[6]).toUpperCase() === 'TRUE',
+      paidGranted: r[7] === '' || r[7] == null || isNaN(Number(r[7])) ? null : Number(r[7]),
+      grantDate: r[8] instanceof Date ? fmtDate_(r[8]) : (parseAt_(r[8]) ? fmtDate_(parseAt_(r[8])) : ''),
+      email: String(r[9] || '').trim(),
     });
   }
   return list;

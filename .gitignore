@@ -1,3 +1,6 @@
 node_modules/
 src/output.css
 dist/
+.clasprc.json
+.clasp.json
+gas-build/

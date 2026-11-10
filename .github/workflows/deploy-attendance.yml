@@ -1,0 +1,65 @@
+# 勤怠システム（attendance/）を Google Apps Script に自動で反映する
+#
+# main ブランチの attendance/ が更新されると、Apps Script にコードを送り、
+# 公開中のウェブアプリを新しいバージョンに更新します（URL は変わりません）。
+# 必要な Secrets：CLASPRC_JSON / SCRIPT_ID / DEPLOYMENT_ID（attendance/README.md 参照）
+
+name: 勤怠システムを Apps Script に反映
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'attendance/**'
+      - '.github/workflows/deploy-attendance.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-attendance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+      DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Secrets が登録されているか確認
+        run: |
+          missing=0
+          for name in CLASPRC_JSON SCRIPT_ID DEPLOYMENT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub の Secrets に ${name} が登録されていません（attendance/README.md の手順を参照）"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Apps Script に送るファイルを用意
+        run: |
+          mkdir -p gas-build
+          cp attendance/*.gs attendance/*.html attendance/appsscript.json gas-build/
+          ls -l gas-build
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '{"scriptId":"%s","rootDir":"gas-build"}' "$SCRIPT_ID" > .clasp.json
+
+      - name: コードを送る（clasp push）
+        run: npx --yes @google/clasp@2.4.2 push --force
+
+      - name: ウェブアプリを新しいバージョンに更新（clasp deploy）
+        run: npx --yes @google/clasp@2.4.2 deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
+
+      - name: 認証ファイルを削除
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json

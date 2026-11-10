@@ -50,6 +50,26 @@
     .btn-sub { border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 10px; font-size: 16px; padding: 14px; cursor: pointer; }
     .btn-out { border: 0; background: var(--out); color: #fff; border-radius: 10px; font-size: 18px; font-weight: 700; padding: 14px; cursor: pointer; }
     .btn-out:disabled { opacity: .5; cursor: wait; }
+    .req-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .req-form .full { grid-column: 1 / -1; }
+    .leave { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; padding: 10px 12px;
+      background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 4px; }
+    .leave b { font-size: 24px; font-variant-numeric: tabular-nums; }
+    .req { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 4px; }
+    .req:first-child { border-top: 0; }
+    .req-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+    .req-top strong { font-size: 15px; }
+    .req-ops { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; margin-top: 4px; }
+    .req-ops input { font-size: 15px; padding: 8px 10px; }
+    .mini { border: 0; border-radius: 8px; padding: 8px 14px; font-size: 15px; font-weight: 700; color: #fff; cursor: pointer; }
+    .mini:disabled { opacity: .5; cursor: wait; }
+    .mini.ok { background: var(--in); } .mini.ng { background: var(--out); }
+    .mini.sub { background: #fff; color: var(--text); border: 1px solid var(--line); font-weight: 400; }
+    .r-申請中 { background: #fef3c7; color: #92400e; } .r-承認 { background: #dcfce7; color: #166534; }
+    .r-却下 { background: #fee2e2; color: #991b1b; } .r-取消 { background: #f3f4f6; color: #6b7280; }
+    .count { display: inline-block; min-width: 22px; padding: 0 7px; margin-left: 6px; border-radius: 999px;
+      background: var(--out); color: #fff; font-size: 13px; text-align: center; }
+    @media (max-width: 480px) { .req-form { grid-template-columns: 1fr; } .req-ops { grid-template-columns: 1fr 1fr; } .req-ops input { grid-column: 1 / -1; } }
     .msg { padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 15px; display: none; }
     .msg.ok { display: block; background: #dcfce7; color: #166534; }
     .msg.err { display: block; background: #fee2e2; color: #991b1b; }
@@ -97,6 +117,15 @@
       <input id="note" type="text" maxlength="200">
     </div>
 
+    <div class="card hidden" id="approvalCard">
+      <h2>承認待ちの申請<span class="count" id="pendingCount"></span></h2>
+      <div id="pendingList"></div>
+      <details style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">最近処理した申請</summary>
+        <div id="recentList"></div>
+      </details>
+    </div>
+
     <div class="card">
       <h2>今日の打刻</h2>
       <div id="todayList" class="muted">まだ打刻がありません</div>
@@ -105,6 +134,28 @@
     <div class="card" id="boardCard">
       <h2>本日の出勤状況（管理者）</h2>
       <div class="scroll"><table id="board"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>有給休暇・休日出勤の申請</h2>
+      <div class="leave" id="leaveBox"></div>
+      <div class="req-form">
+        <div>
+          <label for="reqType">種類</label>
+          <select id="reqType"></select>
+        </div>
+        <div>
+          <label for="reqDate">対象日</label>
+          <input id="reqDate" type="date">
+        </div>
+        <div class="full">
+          <label for="reqReason">理由（休日出勤は必須）</label>
+          <input id="reqReason" type="text" maxlength="200" placeholder="例：私用のため／入試説明会の対応">
+        </div>
+      </div>
+      <button class="btn" id="reqBtn" onclick="doRequest()">申請する</button>
+      <h2 style="margin-top:22px">自分の申請</h2>
+      <div id="myReqList" class="muted">まだ申請はありません</div>
     </div>
 
     <div class="card">
@@ -202,6 +253,10 @@
   }
   function setBusy(on) {
     $('loginBtn').disabled = false;
+    if (!on) {
+      $('reqBtn').disabled = false;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-act]'), function (x) { x.disabled = false; });
+    }
     Array.prototype.forEach.call(document.querySelectorAll('.act'), function (b) { b.disabled = on; });
     if (!on) $('outBtn').disabled = false;
   }
@@ -245,6 +300,86 @@
       var last = st.todayLogs[st.todayLogs.length - 1];
       flash(type + 'を打刻しました' + (last ? '（' + last.time + '）' : ''), true);
     });
+  }
+
+  // 申請
+  function reqItem(r, opts) {
+    var h = '<div class="req"><div class="req-top">' +
+      '<span class="badge r-' + esc(r.status) + '">' + esc(r.status) + '</span>' +
+      (opts.showName ? '<strong>' + esc(r.name) + '</strong>' : '') +
+      '<strong>' + esc(r.dateLabel) + '</strong><span>' + esc(r.type) + '</span>' +
+      (opts.showBalance && r.balance != null ? '<span class="muted">有給残 ' + esc(r.balance) + '日</span>' : '') +
+      '<span class="muted">申請 ' + esc(r.requestedAt) + '</span></div>' +
+      (r.reason ? '<div class="muted">理由：' + esc(r.reason) + '</div>' : '') +
+      (r.status !== '申請中' && r.approver ? '<div class="muted">' + esc(r.status) + '：' + esc(r.approver) +
+        (r.comment ? '（' + esc(r.comment) + '）' : '') + '</div>' : '');
+    if (opts.approve) {
+      h += '<div class="req-ops"><input type="text" id="c-' + esc(r.id) + '" maxlength="200" placeholder="コメント（任意）">' +
+        '<button class="mini ok" data-act="approve" data-id="' + esc(r.id) + '">承認</button>' +
+        '<button class="mini ng" data-act="reject" data-id="' + esc(r.id) + '">却下</button></div>';
+    }
+    if (opts.cancel && r.status === '申請中') {
+      h += '<div><button class="mini sub" data-act="cancel" data-id="' + esc(r.id) + '">取り消す</button></div>';
+    }
+    return h + '</div>';
+  }
+
+  function doRequest() {
+    var type = $('reqType').value, date = $('reqDate').value, reason = $('reqReason').value;
+    if (!date) { flash('対象日を選んでください。', false); return; }
+    $('reqBtn').disabled = true;
+    flash('申請しています…', true);
+    call('submitRequest', [token, type, date, reason], function (st) {
+      $('reqReason').value = '';
+      render(st);
+      flash(date + ' の' + type + 'を申請しました。', true);
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-act]');
+    if (!b) return;
+    var id = b.getAttribute('data-id'), act = b.getAttribute('data-act');
+    b.disabled = true;
+    if (act === 'cancel') {
+      call('cancelRequest', [token, id], function (st) { render(st); flash('申請を取り消しました。', true); });
+    } else {
+      var c = $('c-' + id) ? $('c-' + id).value : '';
+      call('decideRequest', [token, id, act === 'approve', c], function (st) {
+        render(st);
+        flash(act === 'approve' ? '承認しました。' : '却下しました。', true);
+      });
+    }
+  });
+
+  function renderRequests(st) {
+    var sel = $('reqType');
+    if (!sel.options.length) {
+      sel.innerHTML = st.reqTypes.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
+    }
+    var l = st.leave;
+    $('leaveBox').innerHTML = l
+      ? '<span>有給 残り <b>' + esc(l.remaining) + '</b> 日</span>' +
+        '<span class="muted">付与 ' + esc(l.granted) + '日・取得 ' + esc(l.used) + '日' +
+        (l.pending ? '・申請中 ' + esc(l.pending) + '日' : '') + (l.grantDate ? '（' + esc(l.grantDate) + '〜）' : '') + '</span>'
+      : '<span class="muted">有給の付与日数が未登録です（管理者がスタッフシートに入力します）</span>';
+    $('myReqList').innerHTML = st.myRequests.length
+      ? st.myRequests.map(function (r) { return reqItem(r, { cancel: true }); }).join('')
+      : 'まだ申請はありません';
+
+    var a = st.approvals;
+    show('approvalCard', !!a);
+    if (a) {
+      $('pendingCount').textContent = a.pending.length;
+      $('pendingCount').style.display = a.pending.length ? '' : 'none';
+      $('pendingList').innerHTML = a.pending.length
+        ? a.pending.map(function (r) { return reqItem(r, { showName: true, showBalance: true, approve: a.canApprove }); }).join('')
+        : '<div class="muted">承認待ちの申請はありません</div>';
+      $('recentList').innerHTML = a.recent.length
+        ? a.recent.map(function (r) { return reqItem(r, { showName: true }); }).join('')
+        : '<div class="muted">まだありません</div>';
+    }
+    $('reqBtn').disabled = false;
   }
 
   function render(st) {
@@ -291,6 +426,7 @@
       }).join('') +
       '<tr><th colspan="4">合計（' + st.monthDays.length + '日）</th><th>' + Math.floor(totalMin / 60) + ':' +
       ('0' + totalMin % 60).slice(-2) + '</th><th></th></tr>';
+    renderRequests(st);
     setBusy(false);
   }
 

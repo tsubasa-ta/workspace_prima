@@ -41,6 +41,15 @@
     th { color: var(--muted); font-weight: 600; font-size: 12px; }
     .scroll { overflow-x: auto; }
     .warn { color: var(--out); font-weight: 600; }
+    .panel { border: 2px solid var(--out); border-radius: 12px; padding: 14px; margin-top: 16px; text-align: left; }
+    .panel h3 { margin: 0 0 4px; font-size: 17px; }
+    .chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+    .chip { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 12px 4px; font-size: 16px; cursor: pointer; }
+    .chip.on { background: var(--out); border-color: var(--out); color: #fff; font-weight: 700; }
+    .row2 { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-top: 14px; }
+    .btn-sub { border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 10px; font-size: 16px; padding: 14px; cursor: pointer; }
+    .btn-out { border: 0; background: var(--out); color: #fff; border-radius: 10px; font-size: 18px; font-weight: 700; padding: 14px; cursor: pointer; }
+    .btn-out:disabled { opacity: .5; cursor: wait; }
     .msg { padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 15px; display: none; }
     .msg.ok { display: block; background: #dcfce7; color: #166534; }
     .msg.err { display: block; background: #fee2e2; color: #991b1b; }
@@ -75,6 +84,15 @@
       <div class="time" id="nowTime">--:--:--</div>
       <div class="who"><span id="myName"></span> さん　<span id="stateBadge" class="badge"></span></div>
       <div class="actions" id="actions"></div>
+      <div id="outPanel" class="panel hidden">
+        <h3>休憩時間を選んでください</h3>
+        <div class="muted" id="outInfo"></div>
+        <div class="chips" id="breakChips"></div>
+        <div class="row2">
+          <button class="btn-sub" onclick="closeOut()">戻る</button>
+          <button class="btn-out" id="outBtn" onclick="submitOut()">退勤する</button>
+        </div>
+      </div>
       <label for="note">メモ（任意：遅刻理由・直行直帰など）</label>
       <input id="note" type="text" maxlength="200">
     </div>
@@ -185,12 +203,43 @@
   function setBusy(on) {
     $('loginBtn').disabled = false;
     Array.prototype.forEach.call(document.querySelectorAll('.act'), function (b) { b.disabled = on; });
+    if (!on) $('outBtn').disabled = false;
   }
-  function doPunch(type) {
-    if (type === '退勤' && !confirm('退勤を打刻しますか？')) return;
+  var BREAK_OPTIONS = [0, 15, 30, 45, 60, 75, 90, 120];
+  var lastStatus = null, breakMin = null;
+
+  // 退勤ボタン → 休憩時間を選ぶパネルを開く
+  function openOut() {
+    var since = lastStatus && lastStatus.workingSinceMs;
+    var mins = since ? Math.max(0, Math.floor((Date.now() - since) / 60000)) : 0;
+    // 労働基準法の目安：6時間超は45分、8時間超は60分
+    breakMin = mins > 8 * 60 ? 60 : mins > 6 * 60 ? 45 : 0;
+    $('outInfo').textContent = since
+      ? '出勤から ' + Math.floor(mins / 60) + '時間' + (mins % 60) + '分（休憩を含む）'
+      : '';
+    renderChips();
+    show('actions', false); show('outPanel', true);
+  }
+  function closeOut() { show('outPanel', false); show('actions', true); }
+  function renderChips() {
+    $('breakChips').innerHTML = BREAK_OPTIONS.map(function (m) {
+      var label = m === 0 ? 'なし' : m + '分';
+      return '<button class="chip' + (m === breakMin ? ' on' : '') + '" data-m="' + m + '">' + label + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (c) {
+      c.onclick = function () { breakMin = Number(c.getAttribute('data-m')); renderChips(); };
+    });
+  }
+  function submitOut() {
+    $('outBtn').disabled = true;
+    doPunch('退勤', breakMin);
+  }
+
+  function doPunch(type, brk) {
+    if (type === '退勤' && brk == null) { openOut(); return; }
     setBusy(true);
     flash(type + 'を打刻しています…', true);
-    call('punch', [token, type, $('note').value], function (st) {
+    call('punch', [token, type, $('note').value, brk == null ? '' : brk], function (st) {
       $('note').value = '';
       render(st);
       var last = st.todayLogs[st.todayLogs.length - 1];
@@ -199,7 +248,9 @@
   }
 
   function render(st) {
+    lastStatus = st;
     show('loginView', false); show('mainView', true); show('logoutBtn', true);
+    closeOut();
     $('myName').textContent = st.me.name;
     var b = $('stateBadge');
     b.textContent = st.stateLabel;
@@ -214,7 +265,7 @@
 
     $('todayList').innerHTML = st.todayLogs.length
       ? '<table>' + st.todayLogs.map(function (l) {
-          return '<tr><td>' + esc(l.time) + '</td><td>' + esc(l.type) + '</td><td class="muted">' + esc(l.note) + '</td></tr>';
+          return '<tr><td>' + esc(l.time) + '</td><td>' + esc(l.type) + (l.breakMin ? '（休憩' + l.breakMin + '分）' : '') + '</td><td class="muted">' + esc(l.note) + '</td></tr>';
         }).join('') + '</table>'
       : 'まだ打刻がありません';
 

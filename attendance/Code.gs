@@ -5,7 +5,7 @@
  *
  * シート構成
  *   スタッフ : ID / 名前 / 区分 / PIN / 管理者 / 有効
- *   打刻ログ : 日時 / 日付 / スタッフID / 名前 / 種別 / メモ
+ *   打刻ログ : 日時 / 日付 / スタッフID / 名前 / 種別 / メモ / 休憩(分)
  *   集計_YYYY-MM : メニュー「勤怠 > 月次集計を作成」で作られる集計表
  */
 
@@ -26,7 +26,7 @@ const TYPE = {
 // 状態ごとに押せるボタン
 const NEXT_ACTIONS = {
   before: [TYPE.IN],
-  working: [TYPE.BREAK_START, TYPE.OUT],
+  working: [TYPE.OUT], // 休憩は退勤時に時間を選ぶ
   break: [TYPE.BREAK_END],
   done: [TYPE.IN], // 中抜け後の再出勤を許可
 };
@@ -104,8 +104,12 @@ function getStatus(token) {
     stateLabel: STATE_LABEL[state],
     nextActions: NEXT_ACTIONS[state],
     todayLogs: todayLogs.map(function (l) {
-      return { time: fmtTime_(l.at), type: l.type, note: l.note };
+      return { time: fmtTime_(l.at), type: l.type, note: l.note, breakMin: l.breakMin };
     }),
+    // 勤務中なら最後の出勤時刻（退勤時の休憩時間の目安に使う）
+    workingSinceMs: state === 'working'
+      ? todayLogs.filter(function (l) { return l.type === TYPE.IN; }).pop().at.getTime()
+      : null,
     month: month,
     monthDays: summarizeByDay_(mine.filter(function (l) {
       return l.date.indexOf(month) === 0;
@@ -135,7 +139,7 @@ function getStatus(token) {
 }
 
 /** 打刻 */
-function punch(token, type, note) {
+function punch(token, type, note, breakMin) {
   const me = requireStaff_(token);
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -149,8 +153,14 @@ function punch(token, type, note) {
     if (NEXT_ACTIONS[state].indexOf(type) < 0) {
       throw new Error('今は「' + type + '」を打刻できません（現在：' + STATE_LABEL[state] + '）。');
     }
+    let brk = '';
+    if (type === TYPE.OUT) {
+      brk = Number(breakMin);
+      if (!(brk >= 0 && brk <= 480) || brk !== Math.floor(brk)) throw new Error('休憩時間を選んでください。');
+    }
     const sheet = getSheet_(SHEET_LOG);
-    sheet.appendRow([now, today, me.id, me.name, type, String(note || '').slice(0, 200)]);
+    if (sheet.getRange(1, 7).getValue() === '') sheet.getRange(1, 7).setValue('休憩(分)');
+    sheet.appendRow([now, today, me.id, me.name, type, String(note || '').slice(0, 200), brk]);
     sheet.getRange(sheet.getLastRow(), 2, 1, 2).setNumberFormat('@').setValues([[today, me.id]]);
     SpreadsheetApp.flush();
   } finally {
@@ -203,7 +213,7 @@ function setup() {
   let log = ss.getSheetByName(SHEET_LOG);
   if (!log) {
     log = ss.insertSheet(SHEET_LOG);
-    log.appendRow(['日時', '日付', 'スタッフID', '名前', '種別', 'メモ']);
+    log.appendRow(['日時', '日付', 'スタッフID', '名前', '種別', 'メモ', '休憩(分)']);
     log.setFrozenRows(1);
     log.getRange('A:A').setNumberFormat('yyyy/mm/dd hh:mm:ss');
     log.getRange('B:C').setNumberFormat('@');
@@ -318,6 +328,10 @@ function summarizeByDay_(personLogs) {
       } else if (l.type === TYPE.OUT) {
         if (start !== null) workMs += t - start;
         if (breakStart !== null) breakMs += t - breakStart; // 休憩終了の押し忘れ
+        if (l.breakMin) { // 退勤時に選んだ休憩時間を差し引く
+          workMs -= l.breakMin * 60000;
+          breakMs += l.breakMin * 60000;
+        }
         start = null;
         breakStart = null;
         lastOut = l.at;
@@ -327,7 +341,7 @@ function summarizeByDay_(personLogs) {
       date: date,
       firstIn: firstIn,
       lastOut: lastOut,
-      workMin: Math.floor(workMs / 60000),
+      workMin: Math.max(0, Math.floor(workMs / 60000)),
       breakMin: Math.floor(breakMs / 60000),
       open: start !== null || breakStart !== null, // 退勤していない
       notes: ls.map(function (l) { return l.note; }).filter(String).join(' / '),
@@ -400,6 +414,7 @@ function readLogs_() {
       name: String(r[3]),
       type: String(r[4]).trim(),
       note: String(r[5] || ''),
+      breakMin: Number(r[6]) || 0,
     });
   }
   return logs.sort(function (a, b) { return a.at - b.at; });

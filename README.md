@@ -49,3 +49,7 @@ npm start
 - `src/renderer.js` … 画面の動作（アドレスバー、リサイズ、LINE読み込み）
 - `main.js` / `preload.js` … Electron 本体・設定保存
 - `npm run watch:css` で CSS を自動ビルドしながら編集できます
+
+## 勤怠管理
+
+社員・スタッフ向けの勤怠管理システム（Google Apps Script ＋ スプレッドシート）は [`attendance/`](attendance/README.md) にあります。

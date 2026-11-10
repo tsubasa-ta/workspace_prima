@@ -155,6 +155,10 @@ function punch(token, type, note, breakMin) {
     }
     let brk = '';
     if (type === TYPE.OUT) {
+      if (breakMin === undefined || breakMin === null || breakMin === '') {
+        // 更新前に開いていた古い画面から押された場合
+        throw new Error('画面が古いままです。ページを再読み込みしてから、もう一度「退勤」を押してください。');
+      }
       brk = Number(breakMin);
       if (!(brk >= 0 && brk <= 480) || brk !== Math.floor(brk)) throw new Error('休憩時間を選んでください。');
     }

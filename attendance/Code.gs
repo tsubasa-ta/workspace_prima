@@ -156,7 +156,17 @@ function punch(token, type, note) {
   } finally {
     lock.releaseLock();
   }
-  return getStatus(token);
+  const st = getStatus(token);
+  if (st.state === 'before' && type === TYPE.IN) {
+    // 書き込めたのに読み戻せない場合は、原因がわかるようにシートの中身を返す
+    const sheet = getSheet_(SHEET_LOG);
+    const last = sheet.getRange(sheet.getLastRow(), 1, 1, 5).getValues()[0];
+    throw new Error('打刻は記録されましたが、画面に反映できませんでした。この文面を管理者に送ってください：' +
+      JSON.stringify({ at: String(last[0]), atType: Object.prototype.toString.call(last[0]),
+        id: last[2], me: me.id, today: st.today, tz: Session.getScriptTimeZone(),
+        sheetTz: SpreadsheetApp.getActive().getSpreadsheetTimeZone() }));
+  }
+  return st;
 }
 
 /* ------------------------------------------------------------------ */
@@ -380,7 +390,7 @@ function readLogs_() {
   const logs = [];
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
-    const at = r[0] instanceof Date ? r[0] : (r[0] ? new Date(r[0]) : null);
+    const at = parseAt_(r[0]);
     if (!at || isNaN(at.getTime())) continue;
     logs.push({
       at: at,
@@ -442,6 +452,18 @@ function verifyPin_(staff, pin) {
 function idKey_(v) {
   const s = String(v == null ? '' : v).trim();
   return /^\d+$/.test(s) ? String(Number(s)) : s;
+}
+
+/** 「日時」列の値を Date にする。文字列で入っていても日本時間として読む */
+function parseAt_(v) {
+  if (v instanceof Date) return v;
+  if (v === '' || v == null) return null;
+  const m = String(v).trim().match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], (+m[4] || 0) - 9, +m[5] || 0, +m[6] || 0));
+  }
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function fmtDate_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }

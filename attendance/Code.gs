@@ -93,7 +93,7 @@ function getStatus(token) {
   const today = fmtDate_(now);
   const month = Utilities.formatDate(now, TZ, 'yyyy-MM');
 
-  const mine = logs.filter(function (l) { return l.id === me.id; });
+  const mine = logs.filter(function (l) { return l.key === me.key; });
   const todayLogs = mine.filter(function (l) { return l.date === today; });
   const state = stateOf_(todayLogs);
 
@@ -117,7 +117,7 @@ function getStatus(token) {
     result.board = readStaff_()
       .filter(function (s) { return s.active; })
       .map(function (s) {
-        const ls = todayAll.filter(function (l) { return l.id === s.id; });
+        const ls = todayAll.filter(function (l) { return l.key === s.key; });
         const st = stateOf_(ls);
         const first = ls.filter(function (l) { return l.type === TYPE.IN; })[0];
         const outs = ls.filter(function (l) { return l.type === TYPE.OUT; });
@@ -143,7 +143,7 @@ function punch(token, type, note) {
     const now = new Date();
     const today = fmtDate_(now);
     const todayLogs = readLogs_().filter(function (l) {
-      return l.id === me.id && l.date === today;
+      return l.key === me.key && l.date === today;
     });
     const state = stateOf_(todayLogs);
     if (NEXT_ACTIONS[state].indexOf(type) < 0) {
@@ -151,7 +151,8 @@ function punch(token, type, note) {
     }
     const sheet = getSheet_(SHEET_LOG);
     sheet.appendRow([now, today, me.id, me.name, type, String(note || '').slice(0, 200)]);
-    sheet.getRange(sheet.getLastRow(), 2).setNumberFormat('@').setValue(today);
+    sheet.getRange(sheet.getLastRow(), 2, 1, 2).setNumberFormat('@').setValues([[today, me.id]]);
+    SpreadsheetApp.flush();
   } finally {
     lock.releaseLock();
   }
@@ -233,7 +234,7 @@ function buildMonthlySummary(month) {
   const total = [['ID', '名前', '区分', '出勤日数', '実働合計', '実働合計(時間)', '退勤漏れ']];
 
   staffList.forEach(function (s) {
-    const days = summarizeByDay_(logs.filter(function (l) { return l.id === s.id; }));
+    const days = summarizeByDay_(logs.filter(function (l) { return l.key === s.key; }));
     if (!days.length && !s.active) return;
     let workMin = 0;
     let missing = 0;
@@ -357,6 +358,7 @@ function readStaff_() {
     list.push({
       row: i + 1,
       id: id,
+      key: idKey_(id),
       name: String(r[1]).trim(),
       category: String(r[2]).trim(),
       pin: String(r[3]).trim(),
@@ -368,7 +370,8 @@ function readStaff_() {
 }
 
 function findStaff_(id) {
-  return readStaff_().filter(function (s) { return s.id === id; })[0] || null;
+  const key = idKey_(id);
+  return readStaff_().filter(function (s) { return s.key === key; })[0] || null;
 }
 
 /** 打刻ログを読む。日付は「日時」列から求める（手で行を足しても正しく集計される） */
@@ -383,6 +386,7 @@ function readLogs_() {
       at: at,
       date: fmtDate_(at),
       id: String(r[2]).trim(),
+      key: idKey_(r[2]),
       name: String(r[3]),
       type: String(r[4]).trim(),
       note: String(r[5] || ''),
@@ -433,6 +437,12 @@ function verifyPin_(staff, pin) {
 /* ------------------------------------------------------------------ */
 /* 書式                                                                */
 /* ------------------------------------------------------------------ */
+
+/** 「001」と「1」を同じ ID として扱う（シートで先頭の0が消えても照合できるように） */
+function idKey_(v) {
+  const s = String(v == null ? '' : v).trim();
+  return /^\d+$/.test(s) ? String(Number(s)) : s;
+}
 
 function fmtDate_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }
 function fmtTime_(d) { return Utilities.formatDate(d, TZ, 'H:mm'); }

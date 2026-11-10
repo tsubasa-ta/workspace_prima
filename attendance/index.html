@@ -122,7 +122,12 @@
 
   function call(fn, args, onOk) {
     var r = google.script.run
-      .withSuccessHandler(onOk)
+      .withSuccessHandler(function (res) {
+        try { onOk(res); } catch (e) {
+          flash('画面の表示でエラーが起きました：' + e.message, false);
+          setBusy(false);
+        }
+      })
       .withFailureHandler(function (err) {
         var text = (err && err.message) || String(err);
         if (text.indexOf('SESSION_EXPIRED') >= 0) {
@@ -184,10 +189,12 @@
   function doPunch(type) {
     if (type === '退勤' && !confirm('退勤を打刻しますか？')) return;
     setBusy(true);
+    flash(type + 'を打刻しています…', true);
     call('punch', [token, type, $('note').value], function (st) {
       $('note').value = '';
-      flash(type + 'を打刻しました（' + st.todayLogs[st.todayLogs.length - 1].time + '）', true);
       render(st);
+      var last = st.todayLogs[st.todayLogs.length - 1];
+      flash(type + 'を打刻しました' + (last ? '（' + last.time + '）' : ''), true);
     });
   }
 
